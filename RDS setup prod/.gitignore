@@ -1,0 +1,75 @@
+# ====================================
+# Terraform files
+# ====================================
+*.tfstate
+*.tfstate.*
+*.backup
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# Ignore any plan output files
+*.plan
+plan.out
+
+# ====================================
+# AWS keys and secrets
+# ====================================
+*.pem
+*.pub
+secret.json
+*.key
+*.crt
+*.csr
+.env
+.env.*
+config/env-*.sh
+
+# ====================================
+# Logs and temp files
+# ====================================
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# ====================================
+# Python or shell cache (if used)
+# ====================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ====================================
+# Makefile build artifacts
+# ====================================
+*.out
+output/
+build/
+dist/
+.cache/
+.tmp/
+
+# ====================================
+# Sensitive RDS-related files
+# ====================================
+bastion-key*.pem
+bastion-key*.pub
+*.rds.sql
+scripts/*.sql
+
+# ====================================
+# VSCode / JetBrains IDE files
+# ====================================
+.vscode/
+.idea/
+
+# ====================================
+# OS & system junk
+# ====================================
+*.~lock*
+ehthumbs.db
+Icon?

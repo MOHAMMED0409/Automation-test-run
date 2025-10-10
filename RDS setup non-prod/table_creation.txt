@@ -1,0 +1,35 @@
+Step-1: connect to bastion instance
+          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup non-prod/bastion-key-new.pem" ubuntu@<3.89.238.106>
+Step-2: sudo apt update
+        sudo apt install mysql-client -y
+Step-3: mysql -h non-prod-database.cb4ockw0mol8.us-east-1.rds.amazonaws.com \
+      -P 3306 \
+      -u admin \
+      -p
+
+mysql -h non-prod-database.cb4ockw0mol8.us-east-1.rds.amazonaws.com -P 3306 -u admin -p'Admin1234' -e "
+CREATE DATABASE IF NOT EXISTS non_production_db;
+USE non_production_db;
+
+CREATE TABLE IF NOT EXISTS non_prod_sso (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_name VARCHAR(255),
+  email VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS non_prod_thepoint (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255),
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO non_prod_sso (user_name, email) VALUES
+('John Doe', 'john@example.com'),
+('Alice Smith', 'alice@example.com');
+
+INSERT INTO non_prod_thepoint (title, description) VALUES
+('Point A', 'Description for Point A'),
+('Point B', 'Description for Point B');
+"
