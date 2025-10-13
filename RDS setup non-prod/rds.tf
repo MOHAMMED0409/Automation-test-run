@@ -12,6 +12,7 @@ resource "aws_db_instance" "non_prod_db" {
   publicly_accessible     = false
   skip_final_snapshot     = true
   deletion_protection     = false
+  backup_retention_period = 1
 
   tags = {
     Name        = "non-prod-rds"
