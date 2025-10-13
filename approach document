@@ -1,0 +1,13 @@
+Step-1: Use a Scert manager( Secret key and value of IAM user) 
+Step-2: Intput month and year. 
+Step-3: Restore point in time. 
+Step-4: Disable multi AZ and backup to 0 
+Step-5: Run Data Anonymization on prod-sso 
+Step-6: Backup to S3.(Create a new bucket) 
+Step-7: Share the backup copy to non-prod bucket 
+Step-8: Delete the previous prod-sso and prod-thepoint - nonprod acc 
+Step-9: Setting cooltime of 5 to 10 mins. 
+Step-10: DB Restoration. 
+Step-11: Creating user in prod-sso and prod-thepoint 
+Step-12: Delete the previous months S3 buckup file prod and non-prod. 
+Step-13: Delete the Temp RDS in prod.
