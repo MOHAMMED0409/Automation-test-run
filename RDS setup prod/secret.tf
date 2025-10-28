@@ -1,6 +1,6 @@
 # change the versions before running
 resource "aws_secretsmanager_secret" "db_password" {
-  name = "prod-db-password-v3"
+  name = "prod-db-password-v5"
 }
 
 resource "aws_secretsmanager_secret_version" "db_password_version" {

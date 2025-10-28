@@ -1,13 +1,73 @@
-Step-1: Use a Scert manager( Secret key and value of IAM user) 
-Step-2: Intput month and year. 
-Step-3: Restore point in time. 
-Step-4: Disable multi AZ and backup to 0 
-Step-5: Run Data Anonymization on prod-sso 
-Step-6: Backup to S3.(Create a new bucket) 
-Step-7: Share the backup copy to non-prod bucket 
-Step-8: Delete the previous prod-sso and prod-thepoint - nonprod acc 
-Step-9: Setting cooltime of 5 to 10 mins. 
-Step-10: DB Restoration. 
-Step-11: Creating user in prod-sso and prod-thepoint 
-Step-12: Delete the previous months S3 buckup file prod and non-prod. 
-Step-13: Delete the Temp RDS in prod.
+Refined Database Restore & Maintenance Workflow
+
+Step 1: Retrieve Secure Credentials
+
+  Use Secret Manager to fetch:
+    *   Secret key
+    *   Database credentials
+
+Step 2: Collect Input Parameters
+
+   Required inputs:
+    *   Month, Year, Date, Time
+    *   DB names (comma-separated)
+    *   IOPS ticket number
+    *   RDS instance name
+    *   Team name
+    *   User IDs (emails) for later user creation
+
+Step 3: Perform Point-in-Time Restore
+
+   Initiate Point-in-Time Restore for the specified DB(s).
+
+Step 4: Adjust DB Configuration
+
+  Condition Check:
+    *   If Multi-AZ is enabled → Disable it.
+    *   If Backup retention > 0 → Set backup retention to 0.
+
+Step 5: Data Anonymization
+
+   Run Data Anonymization scripts:
+    *   If `prod-sso` is in input → Execute `prod-sso` anonymization script.
+    *   For other DBs → Execute respective anonymization scripts.
+
+Step 6: Backup to S3
+
+   Backup restored DB(s) to existing S3 bucket (no new bucket creation).
+
+Step 7: Remove Old Databases
+
+*   Delete previous `prod-sso` and `prod-thepoint` from non-prod account.
+*   Ensure deletion of exact DB instances.
+
+Step 8: Check S3 Space
+
+*   If S3 has enough space → Skip cooldown and proceed to restoration.
+*   Else → Apply cooldown.
+
+Step 9: Cooldown
+
+*   Wait for 5–10 minutes before next step (only if space check fails).
+
+Step 10: DB Restoration
+
+*   Restore DB(s).
+*   Verify restoration completion.
+
+Step 11: User Creation
+
+ Create users in:
+    *   `prod-sso`
+    *   `prod-thepoint`
+ Use emails from input for user IDs.
+
+Step 12: S3 Cleanup & Lifecycle Policy
+
+*   Delete previous month’s S3 backup files (prod & non-prod).
+*   Apply Lifecycle Policy for 90-day retention.
+
+Step 13: Delete Temporary RDS
+
+*  Delete Temp RDS created during Point-in-Time Restore.
+

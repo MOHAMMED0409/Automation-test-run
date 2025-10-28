@@ -1,6 +1,6 @@
 Step-1: connect to bastion instance
           chmod 400 "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem"
-          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem" ubuntu@3.89.238.106
+          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem" ubuntu@50.16.42.247
 Step-2: sudo apt update
         sudo apt install mysql-client -y
 Step-3: mysql -h prod-database.cf2o0g266yxa.us-east-1.rds.amazonaws.com \
@@ -27,10 +27,27 @@ CREATE TABLE IF NOT EXISTS prod_thepoint (
 );
 
 INSERT INTO prod_sso (user_name, email) VALUES
-('John Doe', 'john@example.com'),
-('Alice Smith', 'alice@example.com');
+('John Doe', 'doe@example.com'),
+('Alice Smith', 'alice@example.com'),
+('Smith', 'smith@example.com'),
+('Mohammed', 'mohammed@example.com'),
+('Khashif', 'khashif@example.com'),
+('Sam', 'sam@example.com'),
+('Joi', 'Joi@example.com'),
+('John', 'john@example.com'),
+('Paul', 'paul@example.com'),
+('Raj', 'raj@example.com');
 
 INSERT INTO prod_thepoint (title, description) VALUES
 ('Point A', 'Description for Point A'),
-('Point B', 'Description for Point B');
+('Point B', 'Description for Point B'),
+('Point C', 'Description for Point C'),
+('Point D', 'Description for Point D'),
+('Point E', 'Description for Point E'),
+('Point F', 'Description for Point F'),
+('Point G', 'Description for Point G'),
+('Point H', 'Description for Point H'),
+('Point I', 'Description for Point I'),
+('Point J', 'Description for Point J')
+;
 "
