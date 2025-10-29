@@ -9,15 +9,21 @@ jobs:
   displayName: 'Job 1 - Configure AWS Credentials from Azure Variables'
   steps:
   - script: |
+      echo "Installing AWS CLI..."
+      sudo apt-get update && sudo apt-get install -y awscli
+    displayName: 'Install AWS CLI'
+  - script: |
       echo "Setting AWS credentials from Azure environment variables..."
       export AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID)
       export AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY)
       export AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION)
-
-      echo "Verifying credentials..."
+    
+  - script: |
+      echo "Verifying AWS credentials..."
       aws sts get-caller-identity
     env:
       AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
       AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
       AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
-    displayName: 'Configure and Verify AWS Credentials'
+    displayName: 'Verify AWS Credentials'
+displayName: 'Configure and Verify AWS Credentials'
