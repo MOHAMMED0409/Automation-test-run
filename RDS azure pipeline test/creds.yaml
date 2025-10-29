@@ -26,6 +26,8 @@ jobs:
       aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
       aws configure set region us-east-1
       echo "Verifying AWS credentials..." 
-      aws sts get-caller-identity
+      # aws sts get-caller-identity
+      echo $SECRET_JSON | jq -r '.AWS_ACCESS_KEY_ID' 
+      echo $SECRET_JSON | jq -r '.AWS_SECRET_ACCESS_KEY'
       
     displayName: 'Fetch and Configure AWS Credentials'
