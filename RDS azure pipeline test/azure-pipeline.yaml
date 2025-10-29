@@ -7,50 +7,50 @@ pool:
 
 # Parameter intialization
 parameters:
-  - name: MONTH
-    displayName: 'Month'
-    type: string
-    default: 'October'
+- name: MONTH
+  displayName: 'Month'
+  type: string
+  default: 'October'
 
-  - name: YEAR
-    displayName: 'Year'
-    type: string
-    default: '2025'
+- name: YEAR
+  displayName: 'Year'
+  type: string
+  default: '2025'
 
-  - name: DATE
-    displayName: 'Date'
-    type: string
-    default: '29'
+- name: DATE
+  displayName: 'Date'
+  type: string
+  default: '29'
 
-  - name: TIME
-    displayName: 'Time'
-    type: string
-    default: '14:00'
+- name: TIME
+  displayName: 'Time'
+  type: string
+  default: '14:00'
 
-  - name: DB_NAMES
-    displayName: 'Database Names (comma-separated)'
-    type: string
-    default: 'db1,db2'
+- name: DB_NAMES
+  displayName: 'Database Names (comma-separated)'
+  type: string
+  default: 'db1,db2'
 
-  - name: IOPS_TICKET
-    displayName: 'IOPS Ticket Number'
-    type: string
-    default: 'IOPS-12345'
+- name: IOPS_TICKET
+  displayName: 'IOPS Ticket Number'
+  type: string
+  default: 'IOPS-12345'
 
-  - name: RDS_INSTANCE
-    displayName: 'RDS Instance Name'
-    type: string
-    default: 'rds-instance-1'
+- name: RDS_INSTANCE
+  displayName: 'RDS Instance Name'
+  type: string
+  default: 'rds-instance-1'
 
-  - name: TEAM_NAME
-    displayName: 'Team Name'
-    type: string
-    default: 'DataOps'
+- name: TEAM_NAME
+  displayName: 'Team Name'
+  type: string
+  default: 'DataOps'
 
-  - name: USER_EMAILS
-    displayName: 'User Emails (comma-separated, optional)'
-    type: string
-    default: ''
+- name: USER_EMAILS
+  displayName: 'User Emails (comma-separated, optional)'
+  type: string
+  default: ''
 
 # Job-1 Set the AWS and Configure AWS Creds
 jobs:
@@ -99,9 +99,9 @@ jobs:
       echo "RDS Instance: ${{ parameters.RDS_INSTANCE }}"
       echo "Team Name: ${{ parameters.TEAM_NAME }}"
 
-      if [ -z "${{ parameters.USER_EMAILS }}" ]; then
-        echo "No user emails provided."
-      else
+      if [ -n "${{ parameters.USER_EMAILS }}" ]; then
         echo "User Emails: ${{ parameters.USER_EMAILS }}"
+      else
+        echo "No user emails provided. Skipping user creation."
       fi
-    displayName: 'Echo Input Parameters'
+    displayName: 'Echo Input Parameters with Optional Email Handling'
