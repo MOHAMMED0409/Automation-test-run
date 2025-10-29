@@ -9,6 +9,9 @@ jobs:
   displayName: 'Job 1 - Fetch AWS Credentials from Secrets Manager'
   steps:
   - script: |
+      curl -I https://secretsmanager.us-east-1.amazonaws.com
+    displayName: 'Test AWS Secrets Manager Connectivity'
+  - script: |
       echo "Installing AWS CLI and jq..."
       sudo apt-get update && sudo apt-get install -y awscli jq
 
