@@ -1,0 +1,107 @@
+trigger:
+- main
+
+# Agent defined self-hosted
+pool:
+  name: Default # Self-hosted agent pool
+
+# Parameter intialization
+parameters:
+  - name: MONTH
+    displayName: 'Month'
+    type: string
+    default: 'October'
+
+  - name: YEAR
+    displayName: 'Year'
+    type: string
+    default: '2025'
+
+  - name: DATE
+    displayName: 'Date'
+    type: string
+    default: '29'
+
+  - name: TIME
+    displayName: 'Time'
+    type: string
+    default: '14:00'
+
+  - name: DB_NAMES
+    displayName: 'Database Names (comma-separated)'
+    type: string
+    default: 'db1,db2'
+
+  - name: IOPS_TICKET
+    displayName: 'IOPS Ticket Number'
+    type: string
+    default: 'IOPS-12345'
+
+  - name: RDS_INSTANCE
+    displayName: 'RDS Instance Name'
+    type: string
+    default: 'rds-instance-1'
+
+  - name: TEAM_NAME
+    displayName: 'Team Name'
+    type: string
+    default: 'DataOps'
+
+  - name: USER_EMAILS
+    displayName: 'User Emails (comma-separated, optional)'
+    type: string
+    default: ''
+
+# Job-1 Set the AWS and Configure AWS Creds
+jobs:
+- job: SetupAWS
+  displayName: 'Job 1 - Configure AWS Credentials from Azure Variables'
+  steps:
+  - script: |
+      echo "Checking if AWS CLI is already installed..."
+      if command -v aws &> /dev/null; then
+        echo "AWS CLI is already installed. Skipping installation."
+      else
+        echo "AWS CLI not found. Installing..."
+        sudo apt-get update && sudo apt-get install -y awscli
+      fi
+    displayName: 'Check and Install AWS CLI'
+
+  - script: |
+      echo "Setting AWS credentials from Azure environment variables..."
+      export AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID)
+      export AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY)
+      export AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION)
+    displayName: 'Set AWS Credentials'
+
+  - script: |
+      echo "Verifying AWS credentials..."
+      echo "AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID"
+      echo "AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:0:4}****"
+      echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+    env:
+      AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+      AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+      AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
+    displayName: 'Configure and Verify AWS Credentials'
+
+# Job-2 Collect Inputs from the users
+- job: CollectInputs
+  displayName: 'Job 2 - Collect Input Parameters'
+  steps:
+  - script: |
+      echo "Month: ${{ parameters.MONTH }}"
+      echo "Year: ${{ parameters.YEAR }}"
+      echo "Date: ${{ parameters.DATE }}"
+      echo "Time: ${{ parameters.TIME }}"
+      echo "DB Names: ${{ parameters.DB_NAMES }}"
+      echo "IOPS Ticket: ${{ parameters.IOPS_TICKET }}"
+      echo "RDS Instance: ${{ parameters.RDS_INSTANCE }}"
+      echo "Team Name: ${{ parameters.TEAM_NAME }}"
+
+      if [ -z "${{ parameters.USER_EMAILS }}" ]; then
+        echo "No user emails provided."
+      else
+        echo "User Emails: ${{ parameters.USER_EMAILS }}"
+      fi
+    displayName: 'Echo Input Parameters'
