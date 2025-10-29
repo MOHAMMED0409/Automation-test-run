@@ -25,4 +25,3 @@ jobs:
       echo "Verifying credentials..."
       aws sts get-caller-identity
     displayName: 'Fetch, Export, and Verify AWS Credentials'
-
