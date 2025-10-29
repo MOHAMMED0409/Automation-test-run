@@ -5,56 +5,19 @@ pool:
   name: Default # Self-hosted agent pool
 
 jobs:
-- job: TestSecretAccess
-  displayName: 'Job 1 - Test AWS Secrets Manager Access via Python'
+- job: SetupAWS
+  displayName: 'Job 1 - Configure AWS Credentials from Azure Variables'
   steps:
   - script: |
-      python3 -m venv venv
-      source venv/bin/activate
-      pip install boto3
-
-      python3 <<EOF
-      import boto3
-      from botocore.exceptions import ClientError
-
-      secret_name = "Account-Keys"
-      region_name = "us-east-1"
-
-      session = boto3.session.Session()
-      client = session.client(
-          service_name='secretsmanager',
-          region_name=region_name
-      )
-
-      try:
-          response = client.get_secret_value(SecretId=secret_name)
-          secret = response['SecretString']
-          print("✅ Secret fetched successfully.")
-      except ClientError as e:
-          print("❌ Failed to fetch secret:", e)
-          raise e
-      EOF
-    displayName: 'Run Python Script to Fetch Secret'
-- job: FetchAWSCredentials
-  displayName: 'Job 1 - Fetch AWS Credentials from Secrets Manager'
-  steps:
-  - script: |
-      curl -I https://secretsmanager.us-east-1.amazonaws.com
-    displayName: 'Test AWS Secrets Manager Connectivity'
-  - script: |
-      echo "Installing AWS CLI and jq..."
-      sudo apt-get update && sudo apt-get install -y awscli jq
-
-      echo "Fetching secret from AWS Secrets Manager..."
-      SECRET_JSON=$(aws secretsmanager get-secret-value \
-        --secret-id Account-Keys \
-        --query SecretString \
-        --output text)
-
-      export AWS_ACCESS_KEY_ID=$(echo $SECRET_JSON | jq -r '.AWS_ACCESS_KEY_ID')
-      export AWS_SECRET_ACCESS_KEY=$(echo $SECRET_JSON | jq -r '.AWS_SECRET_ACCESS_KEY')
-      export AWS_DEFAULT_REGION=us-east-1
+      echo "Setting AWS credentials from Azure environment variables..."
+      export AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID)
+      export AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY)
+      export AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION)
 
       echo "Verifying credentials..."
       aws sts get-caller-identity
-    displayName: 'Fetch, Export, and Verify AWS Credentials'
+    env:
+      AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+      AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+      AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
+    displayName: 'Configure and Verify AWS Credentials'
