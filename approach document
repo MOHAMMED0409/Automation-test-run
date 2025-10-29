@@ -2,19 +2,19 @@ Refined Database Restore & Maintenance Workflow
 
 Step 1: Retrieve Secure Credentials
 
-  Use Secret Manager to fetch:
-    *   Secret key
-    *   Database credentials
+   Use Secret Manager to fetch:
+   _ Secret key
+   _ Database credentials
 
 Step 2: Collect Input Parameters
 
    Required inputs:
-    *   Month, Year, Date, Time
-    *   DB names (comma-separated)
-    *   IOPS ticket number
-    *   RDS instance name
-    *   Team name
-    *   User IDs (emails) for later user creation
+   _ Month, Year, Date, Time
+   _ DB names (comma-separated)
+   _ IOPS ticket number
+   _ RDS instance name
+   _ Team name
+   _ User IDs (emails) for later user creation
 
 Step 3: Perform Point-in-Time Restore
 
@@ -22,15 +22,15 @@ Step 3: Perform Point-in-Time Restore
 
 Step 4: Adjust DB Configuration
 
-  Condition Check:
-    *   If Multi-AZ is enabled → Disable it.
-    *   If Backup retention > 0 → Set backup retention to 0.
+   Condition Check:
+   _ If Multi-AZ is enabled → Disable it.
+   _ If Backup retention > 0 → Set backup retention to 0.
 
 Step 5: Data Anonymization
 
    Run Data Anonymization scripts:
-    *   If `prod-sso` is in input → Execute `prod-sso` anonymization script.
-    *   For other DBs → Execute respective anonymization scripts.
+   _ If `prod-sso` is in input → Execute `prod-sso` anonymization script.
+   _ For other DBs → Execute respective anonymization scripts.
 
 Step 6: Backup to S3
 
@@ -38,36 +38,35 @@ Step 6: Backup to S3
 
 Step 7: Remove Old Databases
 
-*   Delete previous `prod-sso` and `prod-thepoint` from non-prod account.
-*   Ensure deletion of exact DB instances.
+   Delete previous `prod-sso` and `prod-thepoint` from non-prod account.
+   Ensure deletion of exact DB instances.
 
 Step 8: Check S3 Space
 
-*   If S3 has enough space → Skip cooldown and proceed to restoration.
-*   Else → Apply cooldown.
+   If S3 has enough space → Skip cooldown and proceed to restoration.
+   Else → Apply cooldown.
 
 Step 9: Cooldown
 
-*   Wait for 5–10 minutes before next step (only if space check fails).
+   Wait for 5–10 minutes before next step (only if space check fails).
 
 Step 10: DB Restoration
 
-*   Restore DB(s).
-*   Verify restoration completion.
+   Restore DB(s).
+   Verify restoration completion.
 
 Step 11: User Creation
 
- Create users in:
-    *   `prod-sso`
-    *   `prod-thepoint`
- Use emails from input for user IDs.
+   Create users in:
+   _ `prod-sso`
+   _ `prod-thepoint`
+   Use emails from input for user IDs.
 
 Step 12: S3 Cleanup & Lifecycle Policy
 
-*   Delete previous month’s S3 backup files (prod & non-prod).
-*   Apply Lifecycle Policy for 90-day retention.
+   Delete previous month’s S3 backup files (prod & non-prod).
+   Apply Lifecycle Policy for 90-day retention.
 
 Step 13: Delete Temporary RDS
 
-*  Delete Temp RDS created during Point-in-Time Restore.
-
+   Delete Temp RDS created during Point-in-Time Restore.
