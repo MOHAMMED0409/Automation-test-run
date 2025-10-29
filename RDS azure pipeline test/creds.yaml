@@ -20,14 +20,8 @@ jobs:
 
       export AWS_ACCESS_KEY_ID=$(echo $SECRET_JSON | jq -r '.AWS_ACCESS_KEY_ID')
       export AWS_SECRET_ACCESS_KEY=$(echo $SECRET_JSON | jq -r '.AWS_SECRET_ACCESS_KEY')
+      export AWS_DEFAULT_REGION=us-east-1
 
-      echo "Configuring AWS CLI..."
-      aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-      aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-      aws configure set region us-east-1
-      echo "Verifying AWS credentials..." 
-      # aws sts get-caller-identity
-      echo $SECRET_JSON | jq -r '.AWS_ACCESS_KEY_ID' 
-      echo $SECRET_JSON | jq -r '.AWS_SECRET_ACCESS_KEY'
-      
-    displayName: 'Fetch and Configure AWS Credentials'
+      echo "Verifying credentials..."
+      aws sts get-caller-identity
+    displayName: 'Fetch, Configure, and Verify AWS Credentials'
