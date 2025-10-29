@@ -5,6 +5,36 @@ pool:
   name: Default # Self-hosted agent pool
 
 jobs:
+- job: TestSecretAccess
+  displayName: 'Job 1 - Test AWS Secrets Manager Access via Python'
+  steps:
+  - script: |
+      python3 -m venv venv
+      source venv/bin/activate
+      pip install boto3
+
+      python3 <<EOF
+      import boto3
+      from botocore.exceptions import ClientError
+
+      secret_name = "Account-Keys"
+      region_name = "us-east-1"
+
+      session = boto3.session.Session()
+      client = session.client(
+          service_name='secretsmanager',
+          region_name=region_name
+      )
+
+      try:
+          response = client.get_secret_value(SecretId=secret_name)
+          secret = response['SecretString']
+          print("✅ Secret fetched successfully.")
+      except ClientError as e:
+          print("❌ Failed to fetch secret:", e)
+          raise e
+      EOF
+    displayName: 'Run Python Script to Fetch Secret'
 - job: FetchAWSCredentials
   displayName: 'Job 1 - Fetch AWS Credentials from Secrets Manager'
   steps:
