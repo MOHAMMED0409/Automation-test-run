@@ -101,18 +101,19 @@ jobs:
   dependsOn: CollectInputs
   steps:
   - script: |
-      echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
-      echo "[INFO] Source DB: ${{ parameters.DB_NAMES }}"
-      echo "[INFO] IOPS Ticket: ${{ parameters.IOPS_TICKET }}"
+      echo "[INFO] Starting RDS Point-in-Time Restore..."
 
-      echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+      REGION="$AWS_DEFAULT_REGION"
       SOURCE_DB="${{ parameters.DB_NAMES }}"
       IOPS_TICKET="${{ parameters.IOPS_TICKET }}"
       TARGET_DB="Temp-${SOURCE_DB}-${IOPS_TICKET}"
       RESTORE_TIMESTAMP="${{ parameters.RESTORE_DATE }}T${{ parameters.TIME }}:00Z"
 
-      echo "[INFO] Target DB: $TARGET_DB"
       echo "[INFO] Restore Time: $RESTORE_TIMESTAMP"
+      echo "[INFO] Installing jq if not present..."
+      if ! command -v jq &> /dev/null; then
+        sudo apt-get update && sudo apt-get install -y jq
+      fi
 
       echo "[INFO] Fetching source DB configuration..."
       DB_INFO=$(aws rds describe-db-instances \
@@ -126,12 +127,6 @@ jobs:
       VPC_SG_IDS=$(echo "$DB_INFO" | jq -r '.VpcSecurityGroups[].VpcSecurityGroupId' | paste -sd "," -)
       STORAGE_TYPE=$(echo "$DB_INFO" | jq -r '.StorageType')
 
-      echo "[INFO] Source configuration:"
-      echo " - Instance Class: $INSTANCE_CLASS"
-      echo " - Subnet Group: $SUBNET_GROUP"
-      echo " - Security Groups: $VPC_SG_IDS"
-      echo " - Storage Type: $STORAGE_TYPE"
-
       echo "[INFO] Starting RDS restore..."
       aws rds restore-db-instance-to-point-in-time \
         --region "$REGION" \
@@ -141,7 +136,7 @@ jobs:
         --no-multi-az \
         --db-instance-class "$INSTANCE_CLASS" \
         --db-subnet-group-name "$SUBNET_GROUP" \
-        --vpc-security-group-ids $VPC_SG_IDS \
+        --vpc-security-group-ids "$VPC_SG_IDS" \
         --storage-type "$STORAGE_TYPE" \
         --publicly-accessible \
         --tags Key=RestoredBy,Value=AzurePipeline
