@@ -21,14 +21,14 @@ parameters:
 - name: DB_NAMES
   displayName: 'Database Names (comma-separated)'
   type: string
-  default: 'database-1'
+  default: ''
 
 - name: IOPS_TICKET
   displayName: 'IOPS Ticket Number'
   type: string
   default: 'IOPS-12345'
 
-- name: RDS_INSTANCE
+- name: SOURCE_DB
   displayName: 'RDS Instance Name'
   type: string
   default: 'prod-database'
@@ -41,7 +41,7 @@ parameters:
 - name: USER_EMAILS
   displayName: 'User Emails (comma-separated, optional)'
   type: string
-  default: ''
+  default: 'mohammedkhashif02@gmail.com'
 
 # Job-1 Set the AWS and Configure AWS Creds
 jobs:
@@ -85,7 +85,7 @@ jobs:
       echo "Time: ${{ parameters.TIME }}"
       echo "DB Names: ${{ parameters.DB_NAMES }}"
       echo "IOPS Ticket: ${{ parameters.IOPS_TICKET }}"
-      echo "RDS Instance: ${{ parameters.RDS_INSTANCE }}"
+      echo "RDS Instance: ${{ parameters.SOURCE_DB }}"
       echo "Team Name: ${{ parameters.TEAM_NAME }}"
 
       if [ -n "${{ parameters.USER_EMAILS }}" ]; then
