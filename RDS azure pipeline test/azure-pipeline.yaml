@@ -46,35 +46,51 @@ parameters:
 # Job-1 Set the AWS and Configure AWS Creds
 jobs:
 - job: SetupAWS
-  displayName: 'Job 1 - Configure AWS Credentials from Azure Variables'
+  displayName: 'Job 1 - Configure AWS CLI and Credentials'
   steps:
   - script: |
-      echo "Checking if AWS CLI is already installed..."
+      echo "[INFO] Checking if AWS CLI is already installed..."
       if command -v aws &> /dev/null; then
-        echo "AWS CLI is already installed. Skipping installation."
+        echo "[INFO] AWS CLI is already installed. Skipping installation."
       else
-        echo "AWS CLI not found. Installing..."
-        sudo apt-get update && sudo apt-get install -y awscli
+        echo "[INFO] Installing AWS CLI..."
+        sudo apt-get update -y
+        sudo apt-get install -y awscli
       fi
-    displayName: 'Check and Install AWS CLI'
+
+      echo "[INFO] Checking if jq is installed..."
+      if command -v jq &> /dev/null; then
+        echo "[INFO] jq is already installed. Skipping installation."
+      else
+        echo "[INFO] Installing jq..."
+        sudo apt-get install -y jq
+      fi
+
+      echo "[INFO] Verifying installed versions..."
+      aws --version
+      jq --version
+    displayName: 'Install AWS CLI and jq'
 
   - script: |
-      echo "Setting AWS credentials from Azure environment variables..."
+      echo "[INFO] Setting AWS credentials from Azure environment variables..."
       export AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID)
       export AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY)
       export AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION)
+      echo "[INFO] AWS credentials configured successfully."
     displayName: 'Set AWS Credentials'
 
   - script: |
-      echo "Verifying AWS credentials..."
-      echo "AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID"
-      echo "AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:0:4}****"
-      echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+      echo "[INFO] AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID"
+      echo "[INFO] AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:0:4}****"
+      echo "[INFO] AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+
+      echo "[INFO] Validating AWS connection..."
+      aws sts get-caller-identity --region "$AWS_DEFAULT_REGION"
     env:
       AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
       AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
       AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
-    displayName: 'Configure and Verify AWS Credentials'
+    displayName: 'Verify AWS Credentials and Connection'
 
 # Job-2 Collect Inputs from the users
 - job: CollectInputs
@@ -101,9 +117,6 @@ jobs:
   dependsOn: CollectInputs
   steps:
   - script: |
-      set -e
-      echo "=== Stage 3: RDS Restore Started ==="
-
       REGION="$AWS_DEFAULT_REGION"
       SOURCE_DB="${{ parameters.SOURCE_DB }}"
       IOPS_TICKET="${{ parameters.IOPS_TICKET }}"
@@ -122,13 +135,12 @@ jobs:
       DB_INFO=$(aws rds describe-db-instances \
         --region "$REGION" \
         --db-instance-identifier "$SOURCE_DB" \
-        --query "DBInstances[0]" \
         --output json)
 
-      INSTANCE_CLASS=$(echo "$DB_INFO" | jq -r '.DBInstanceClass')
-      SUBNET_GROUP=$(echo "$DB_INFO" | jq -r '.DBSubnetGroup.DBSubnetGroupName')
-      VPC_SG_IDS=$(echo "$DB_INFO" | jq -r '.VpcSecurityGroups[].VpcSecurityGroupId' | paste -sd "," -)
-      STORAGE_TYPE=$(echo "$DB_INFO" | jq -r '.StorageType')
+      INSTANCE_CLASS=$(echo "$DB_INFO" | jq -r '.DBInstances[0].DBInstanceClass')
+      SUBNET_GROUP=$(echo "$DB_INFO" | jq -r '.DBInstances[0].DBSubnetGroup.DBSubnetGroupName')
+      VPC_SG_IDS=$(echo "$DB_INFO" | jq -r '.DBInstances[0].VpcSecurityGroups[].VpcSecurityGroupId' | paste -sd "," -)
+      STORAGE_TYPE=$(echo "$DB_INFO" | jq -r '.DBInstances[0].StorageType')
 
       echo "[INFO] Source configuration:"
       echo " - Instance Class: $INSTANCE_CLASS"
@@ -148,7 +160,8 @@ jobs:
         --vpc-security-group-ids $VPC_SG_IDS \
         --storage-type "$STORAGE_TYPE" \
         --publicly-accessible \
-        --tags Key=RestoredBy,Value=AzurePipeline
+        --tags Key=RestoredBy,Value=AzurePipeline \
+        --output text   # Fix: avoid JSON output parsing issue
 
       echo "[INFO] Waiting for $NEW_DB_ID to become available..."
       aws rds wait db-instance-available \
