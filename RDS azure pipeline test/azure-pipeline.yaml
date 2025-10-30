@@ -11,12 +11,12 @@ parameters:
 - name: RESTORE_DATE
   displayName: 'Restore Date (yyyy-mm-dd)'
   type: string
-  default: '2025-10-29'
+  default: '2025-10-30'
 
 - name: TIME
   displayName: 'Time'
   type: string
-  default: '07:31'
+  default: '06:40'
 
 - name: DB_NAMES
   displayName: 'Database Names (comma-separated)'
@@ -101,6 +101,24 @@ jobs:
   dependsOn: CollectInputs
   steps:
   - script: |
+      # Fetch Source DB Config
+      echo "[INFO] Fetching source DB configuration..."
+      DB_INFO=$(aws rds describe-db-instances \
+        --region "$REGION" \
+        --db-instance-identifier "$SOURCE_DB" \
+        --query "DBInstances[0]" \
+        --output json)
+
+      INSTANCE_CLASS=$(echo "$DB_INFO" | jq -r '.DBInstanceClass')
+      SUBNET_GROUP=$(echo "$DB_INFO" | jq -r '.DBSubnetGroup.DBSubnetGroupName')
+      VPC_SG_IDS=$(echo "$DB_INFO" | jq -r '.VpcSecurityGroups[].VpcSecurityGroupId' | paste -sd "," -)
+      STORAGE_TYPE=$(echo "$DB_INFO" | jq -r '.StorageType')
+
+      echo "[INFO] Source configuration:"
+      echo " - Instance Class: $INSTANCE_CLASS"
+      echo " - Subnet Group: $SUBNET_GROUP"
+      echo " - Security Groups: $VPC_SG_IDS"
+      echo " - Storage Type: $STORAGE_TYPE"
       echo "[INFO] Starting RDS Point-in-Time Restore..."
 
       REGION="$AWS_DEFAULT_REGION"
