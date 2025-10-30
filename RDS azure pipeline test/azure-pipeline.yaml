@@ -84,20 +84,6 @@ jobs:
       echo "[INFO] AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:0:4}****"
       echo "[INFO] AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
 
-      echo "[INFO] Validating AWS connection..."
-      IDENTITY_JSON=$(aws sts get-caller-identity --region "$AWS_DEFAULT_REGION" 2>&1)
-      if [ $? -ne 0 ]; then
-        echo "[ERROR] Failed to validate AWS credentials"
-        echo "$IDENTITY_JSON"
-        exit 1
-      fi
-
-      ACCOUNT_ID=$(echo "$IDENTITY_JSON" | jq -r '.Account')
-      ARN=$(echo "$IDENTITY_JSON" | jq -r '.Arn')
-
-      echo "[INFO] AWS credentials validated successfully."
-      echo "[INFO] AWS Account ID: $ACCOUNT_ID"
-      echo "[INFO] ARN: $ARN"
     env:
       AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
       AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
