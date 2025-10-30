@@ -21,7 +21,7 @@ parameters:
 - name: DB_NAMES
   displayName: 'Database Names (comma-separated)'
   type: string
-  default: 'prod-database'
+  default: 'database-1'
 
 - name: IOPS_TICKET
   displayName: 'IOPS Ticket Number'
@@ -31,7 +31,7 @@ parameters:
 - name: RDS_INSTANCE
   displayName: 'RDS Instance Name'
   type: string
-  default: 'rds-instance-1'
+  default: 'prod-database'
 
 - name: TEAM_NAME
   displayName: 'Team Name'
