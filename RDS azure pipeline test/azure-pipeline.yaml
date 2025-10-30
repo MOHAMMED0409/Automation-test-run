@@ -104,7 +104,7 @@ jobs:
       echo "[INFO] Starting RDS Point-in-Time Restore..."
 
       REGION="$AWS_DEFAULT_REGION"
-      SOURCE_DB="${{ parameters.DB_NAMES }}"
+      SOURCE_DB="${{ parameters.SOURCE_DB }}"
       IOPS_TICKET="${{ parameters.IOPS_TICKET }}"
       TARGET_DB="Temp-${SOURCE_DB}-${IOPS_TICKET}"
       RESTORE_TIMESTAMP="${{ parameters.RESTORE_DATE }}T${{ parameters.TIME }}:00Z"
