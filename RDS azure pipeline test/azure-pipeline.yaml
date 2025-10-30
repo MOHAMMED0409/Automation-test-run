@@ -81,9 +81,7 @@ jobs:
   displayName: 'Job 2 - Collect Input Parameters'
   steps:
   - script: |
-      echo "Month: ${{ parameters.MONTH }}"
-      echo "Year: ${{ parameters.YEAR }}"
-      echo "Date: ${{ parameters.DATE }}"
+      echo "Date: ${{ parameters.RESTORE_DATE }}"
       echo "Time: ${{ parameters.TIME }}"
       echo "DB Names: ${{ parameters.DB_NAMES }}"
       echo "IOPS Ticket: ${{ parameters.IOPS_TICKET }}"
