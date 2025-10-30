@@ -7,30 +7,21 @@ pool:
 
 # Parameter intialization
 parameters:
-- name: MONTH
-  displayName: 'Month'
-  type: string
-  default: 'October'
 
-- name: YEAR
-  displayName: 'Year'
+- name: RESTORE_DATE
+  displayName: 'Restore Date (yyyy-mm-dd)'
   type: string
-  default: '2025'
-
-- name: DATE
-  displayName: 'Date'
-  type: string
-  default: '29'
+  default: '2025-10-29'
 
 - name: TIME
   displayName: 'Time'
   type: string
-  default: '14:00'
+  default: '07:31'
 
 - name: DB_NAMES
   displayName: 'Database Names (comma-separated)'
   type: string
-  default: 'db1,db2'
+  default: 'prod-database'
 
 - name: IOPS_TICKET
   displayName: 'IOPS Ticket Number'
@@ -105,3 +96,66 @@ jobs:
         echo "No user emails provided. Skipping user creation."
       fi
     displayName: 'Echo Input Parameters with Optional Email Handling'
+
+# Job-3 RDS Point in time restoration
+- job: RestoreRDS
+  displayName: 'Job 3 - Perform RDS Point-in-Time Restore'
+  dependsOn: CollectInputs
+  steps:
+  - script: |
+      echo "[INFO] Region: ${{ parameters.AWS_DEFAULT_REGION }}"
+      echo "[INFO] Source DB: ${{ parameters.DB_NAMES }}"
+      echo "[INFO] IOPS Ticket: ${{ parameters.IOPS_TICKET }}"
+
+      REGION="${{ parameters.AWS_DEFAULT_REGION }}"
+      SOURCE_DB="${{ parameters.DB_NAMES }}"
+      IOPS_TICKET="${{ parameters.IOPS_TICKET }}"
+      TARGET_DB="Temp-${SOURCE_DB}-${IOPS_TICKET}"
+      RESTORE_TIMESTAMP="${{ parameters.RESTORE_DATE }}T${{ parameters.TIME }}:00Z"
+
+      echo "[INFO] Target DB: $TARGET_DB"
+      echo "[INFO] Restore Time: $RESTORE_TIMESTAMP"
+
+      echo "[INFO] Fetching source DB configuration..."
+      DB_INFO=$(aws rds describe-db-instances \
+        --region "$REGION" \
+        --db-instance-identifier "$SOURCE_DB" \
+        --query "DBInstances[0]" \
+        --output json)
+
+      INSTANCE_CLASS=$(echo "$DB_INFO" | jq -r '.DBInstanceClass')
+      SUBNET_GROUP=$(echo "$DB_INFO" | jq -r '.DBSubnetGroup.DBSubnetGroupName')
+      VPC_SG_IDS=$(echo "$DB_INFO" | jq -r '.VpcSecurityGroups[].VpcSecurityGroupId' | paste -sd "," -)
+      STORAGE_TYPE=$(echo "$DB_INFO" | jq -r '.StorageType')
+
+      echo "[INFO] Source configuration:"
+      echo " - Instance Class: $INSTANCE_CLASS"
+      echo " - Subnet Group: $SUBNET_GROUP"
+      echo " - Security Groups: $VPC_SG_IDS"
+      echo " - Storage Type: $STORAGE_TYPE"
+
+      echo "[INFO] Starting RDS restore..."
+      aws rds restore-db-instance-to-point-in-time \
+        --region "$REGION" \
+        --source-db-instance-identifier "$SOURCE_DB" \
+        --target-db-instance-identifier "$TARGET_DB" \
+        --restore-time "$RESTORE_TIMESTAMP" \
+        --no-multi-az \
+        --db-instance-class "$INSTANCE_CLASS" \
+        --db-subnet-group-name "$SUBNET_GROUP" \
+        --vpc-security-group-ids $VPC_SG_IDS \
+        --storage-type "$STORAGE_TYPE" \
+        --publicly-accessible \
+        --tags Key=RestoredBy,Value=AzurePipeline
+
+      echo "[INFO] Waiting for $TARGET_DB to become available..."
+      aws rds wait db-instance-available \
+        --region "$REGION" \
+        --db-instance-identifier "$TARGET_DB"
+
+      echo "[SUCCESS] Restore completed for DB instance: $TARGET_DB"
+    env:
+      AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+      AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+      AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
+    displayName: 'Restore RDS to Point-in-Time'
