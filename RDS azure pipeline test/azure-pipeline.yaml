@@ -18,10 +18,10 @@ parameters:
   type: string
   default: '06:40'
 
-- name: DB_NAMES
-  displayName: 'Database Names (comma-separated)'
+- name: TABLE_NAME
+  displayName: 'Table Names (comma-separated)'
   type: string
-  default: 'production_db'
+  default: 'prod-sso'
 
 - name: IOPS_TICKET
   displayName: 'IOPS Ticket Number'
@@ -166,6 +166,44 @@ jobs:
       aws rds wait db-instance-available \
         --region "$REGION" \
         --db-instance-identifier "$NEW_DB_ID"
+      
+      echo "[INFO] Checking and adjusting DB configuration for $NEW_DB_ID..."
+
+      # Fetch current DB configuration
+      DB_CONFIG=$(aws rds describe-db-instances \
+        --region "$REGION" \
+        --db-instance-identifier "$NEW_DB_ID" \
+        --query "DBInstances[0]" \
+        --output json)
+
+      IS_MULTI_AZ=$(echo "$DB_CONFIG" | jq -r '.MultiAZ')
+      CURRENT_BACKUP_RETENTION=$(echo "$DB_CONFIG" | jq -r '.BackupRetentionPeriod')
+
+      # Disable Multi-AZ if enabled
+      if [ "$IS_MULTI_AZ" == "true" ]; then
+        echo "[INFO] Multi-AZ is enabled. Disabling..."
+        aws rds modify-db-instance \
+          --region "$REGION" \
+          --db-instance-identifier "$NEW_DB_ID" \
+          --no-multi-az \
+          --apply-immediately
+      else
+        echo "[INFO] Multi-AZ is already disabled."
+      fi
+
+      # Set Backup Retention Period to 0 if greater than 0
+      if [ "$CURRENT_BACKUP_RETENTION" -gt 0 ]; then
+        echo "[INFO] Backup retention period is $CURRENT_BACKUP_RETENTION. Setting to 0..."
+        aws rds modify-db-instance \
+          --region "$REGION" \
+          --db-instance-identifier "$NEW_DB_ID" \
+          --backup-retention-period 0 \
+          --apply-immediately
+      else
+        echo "[INFO] Backup retention already set to 0."
+      fi
+
+      echo "[INFO] DB configuration adjusted successfully for $NEW_DB_ID."
 
       echo "Restore successful! DB instance: $NEW_DB_ID"
 
@@ -182,3 +220,5 @@ jobs:
       AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
       AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
     displayName: 'Perform RDS Point-in-Time Restore using Source Config'
+
+    
