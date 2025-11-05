@@ -1,4 +1,4 @@
-USE prod-sso;
+USE prod_sso;
 UPDATE prod_sso
 SET 
   user_name = CONCAT('user_', LPAD(id, 4, '0')),
