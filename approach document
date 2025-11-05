@@ -31,6 +31,9 @@ Step 5: Data Anonymization
    Run Data Anonymization scripts:
    _ If `prod-sso` is in input → Execute `prod-sso` anonymization script.
    _ For other DBs → Execute respective anonymization scripts.
+   Note:
+      The Data Anonymization scripts are to be referred from the repos
+      For example: prod-sso the anonymization scripts will be different and for other tables the script will be different. Based on the table name pull the scripts from the repos.
 
 Step 6: Backup to S3
 

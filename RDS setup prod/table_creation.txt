@@ -1,6 +1,6 @@
 Step-1: connect to bastion instance
           chmod 400 "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem"
-          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem" ubuntu@50.16.42.247
+          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem" ubuntu@98.93.140.185
 Step-2: sudo apt update
         sudo apt install mysql-client -y
 Step-3: mysql -h prod-database.cf2o0g266yxa.us-east-1.rds.amazonaws.com \
@@ -9,8 +9,8 @@ Step-3: mysql -h prod-database.cf2o0g266yxa.us-east-1.rds.amazonaws.com \
       -p
 
 mysql -h prod-database.cf2o0g266yxa.us-east-1.rds.amazonaws.com -P 3306 -u admin -p'Admin1234' -e "
-CREATE DATABASE IF NOT EXISTS production_db;
-USE production_db;
+CREATE DATABASE IF NOT EXISTS prod_sso;
+USE prod_sso;
 
 CREATE TABLE IF NOT EXISTS prod_sso (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -51,3 +51,12 @@ INSERT INTO prod_thepoint (title, description) VALUES
 ('Point J', 'Description for Point J')
 ;
 "
+
+Data Anonymization
+
+USE prod-sso;
+UPDATE prod_sso
+SET 
+  user_name = CONCAT('user_', LPAD(id, 4, '0')),
+  email = CONCAT('user_', LPAD(id, 4, '0'), '@anonymized.local');
+

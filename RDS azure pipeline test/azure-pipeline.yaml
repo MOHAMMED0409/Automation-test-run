@@ -18,7 +18,7 @@ parameters:
   type: string
   default: '06:40'
 
-- name: TABLE_NAME
+- name: DB_NAME
   displayName: 'Table Names (comma-separated)'
   type: string
   default: 'prod-sso'
@@ -215,10 +215,53 @@ jobs:
         --output text)
 
       echo "New DB Endpoint: $NEW_ENDPOINT"
+      # Export endpoint as Azure output variable
+      echo "##vso[task.setvariable variable=NEW_DB_ENDPOINT;isOutput=true]$NEW_ENDPOINT"
     env:
       AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
       AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
       AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
     displayName: 'Perform RDS Point-in-Time Restore using Source Config'
 
-    
+# Job-4 Data Anonymization
+- job: DataAnonymization
+  displayName: 'Job 4 - Data Anonymization for Restored Databases'
+  dependsOn: RestoreRDS
+  variables:
+    NEW_DB_ENDPOINT: $[ dependencies.RestoreRDS.outputs['RestoreStep.NEW_DB_ENDPOINT'] ]
+  steps:
+  - checkout: self
+    displayName: 'Checkout Repository to Access Scripts'
+
+  - script: |
+      echo "[INFO] Starting Data Anonymization Process..."
+      DBNAME="${{ parameters.DB_NAME }}"
+      echo "[INFO] Table Names: $DBNAME"
+      echo "[INFO] Using Restored DB Endpoint: $NEW_DB_ENDPOINT"
+
+      REPO_DIR="$(System.DefaultWorkingDirectory)/scripts" #Needs change based on the repo structure
+      if [ ! -d "$REPO_DIR" ]; then
+        echo "[ERROR] Scripts directory not found at $REPO_DIR"
+        exit 1
+      fi
+
+      DB_USER="admin"
+      DB_PASS="your_password" #Pull the passwords from the secrets 
+
+      IFS=',' read -ra TABLE_LIST <<< "$TABLES"
+      for TABLE in "${TABLE_LIST[@]}"; do
+        TABLE_TRIMMED=$(echo "$TABLE" | xargs)
+        echo "[INFO] Processing anonymization for: $TABLE_TRIMMED"
+
+        SCRIPT_FILE="$REPO_DIR/anonymize_${TABLE_TRIMMED}.sh"
+        if [[ -f "$SCRIPT_FILE" ]]; then
+          echo "[INFO] Found anonymization script: $SCRIPT_FILE"
+          chmod +x "$SCRIPT_FILE"
+          bash "$SCRIPT_FILE" "$NEW_DB_ENDPOINT" "$DB_USER" "$DB_PASS"
+        else
+          echo "[WARN] No anonymization script found for $TABLE_TRIMMED. Skipping..."
+        fi
+      done
+      echo "[INFO] All anonymization tasks completed."
+    displayName: 'Run Data Anonymization Scripts from Repository'
+
