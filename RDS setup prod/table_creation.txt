@@ -1,6 +1,6 @@
 Step-1: connect to bastion instance
           chmod 400 "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem"
-          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem" ubuntu@98.93.140.185
+          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup prod/bastion-key-new.pem" ubuntu@34.207.87.48
 Step-2: sudo apt update
         sudo apt install mysql-client -y
 Step-3: mysql -h prod-database.cf2o0g266yxa.us-east-1.rds.amazonaws.com \
@@ -12,12 +12,12 @@ mysql -h prod-database.cf2o0g266yxa.us-east-1.rds.amazonaws.com -P 3306 -u admin
 CREATE DATABASE IF NOT EXISTS prod_sso;
 USE prod_sso;
 
-CREATE TABLE IF NOT EXISTS prod_sso (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_name VARCHAR(255),
-  email VARCHAR(255),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  CREATE TABLE IF NOT EXISTS prod_sso (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_name VARCHAR(255),
+    email VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
 
 CREATE TABLE IF NOT EXISTS prod_thepoint (
   id INT AUTO_INCREMENT PRIMARY KEY,

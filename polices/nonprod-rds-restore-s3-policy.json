@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowListBackupsPrefix",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::backup-bucket-temp-rds-1",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["backups/*"]
+        }
+      }
+    },
+    {
+      "Sid": "AllowRWAccessToBackupObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": "arn:aws:s3:::backup-bucket-temp-rds-1/backups/*"
+    }
+  ]
+}

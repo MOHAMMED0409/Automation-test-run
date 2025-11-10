@@ -1,6 +1,6 @@
 Step-1: connect to bastion instance
           chmod 400 "/home/mkhashif/Documents/Automation test run/RDS setup non-prod/bastion-key-new.pem"
-          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup non-prod/bastion-key-new.pem" ubuntu@<3.89.238.106>
+          ssh -i "/home/mkhashif/Documents/Automation test run/RDS setup non-prod/bastion-key-new.pem" ubuntu@98.93.125.177
 Step-2: sudo apt update
         sudo apt install mysql-client -y
 Step-3: mysql -h non-prod-database.cb4ockw0mol8.us-east-1.rds.amazonaws.com \
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS non_prod_thepoint (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO non_prod_sso (user_name, email) VALUES
+INSERT INTO prod_sso (user_name, email) VALUES
 ('John Doe', 'john@example.com'),
 ('Alice Smith', 'alice@example.com');
 
@@ -43,3 +43,7 @@ SET
   user_name = CONCAT('user_', LPAD(id, 4, '0')),
   email = CONCAT('user_', LPAD(id, 4, '0'), '@anonymized.local');
 
+scp RDS\ setup\ prod/bastion-key-new.pem mkhashif@imltw465:/home/mkhashif/.ssh/bastion-key-new.pem
+ssh mkhashif@imltw465
+chmod 400 ~/.ssh/bastion-key-new.pem
+scp RDS\ setup\ non-prod/bastion-key-new.pem mkhashif@imltw465:/home/mkhashif/.ssh/non-prod-bastion-key-new.pem

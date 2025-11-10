@@ -1,0 +1,47 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "RequireTLS",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::backup-bucket-temp-rds-1",
+          "arn:aws:s3:::backup-bucket-temp-rds-1/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      },
+      {
+        "Sid": "AllowListBackupFolder",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::891377400738:role/NonProd-RDS-Restore-Role"
+        },
+        "Action": "s3:ListBucket",
+        "Resource": "arn:aws:s3:::backup-bucket-temp-rds-1",
+        "Condition": {
+          "StringLike": {
+            "s3:prefix": "IOPS-12345,IOPS-67891/*"
+          }
+        }
+      },
+      {
+        "Sid": "AllowAccessToBackupObjects",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::891377400738:role/NonProd-RDS-Restore-Role"
+        },
+        "Action": [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ],
+        "Resource": "arn:aws:s3:::backup-bucket-temp-rds-1/IOPS-12345,IOPS-67891/*"
+      }
+    ]
+  }

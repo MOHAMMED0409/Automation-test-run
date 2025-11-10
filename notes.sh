@@ -1,3 +1,6 @@
+# --------------------------------------------------------------------------------------
+# ------------------------------STAGE-1-------------------------------------------------
+# --------------------------------------------------------------------------------------
 #!/bin/bash
 set -euo pipefail
 
@@ -168,8 +171,9 @@ echo "Artifact created: $ARTIFACT_FILE"
 cat "$ARTIFACT_FILE"
 echo "---------------------------------------"
 
-
-# Stage-2
+# --------------------------------------------------------------------------------------
+# ------------------------------STAGE-2-------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 #!/bin/bash
 set -euo pipefail
@@ -369,3 +373,626 @@ if (( FAILURES > 0 )); then
 fi
 
 echo "[SUCCESS] All RDS restores completed successfully."
+
+# --------------------------------------------------------------------------------------
+# ------------------------------STAGE-3-------------------------------------------------
+# --------------------------------------------------------------------------------------
+
+#!/bin/bash
+set -euo pipefail
+
+echo "======================================"
+echo "Stage 3 - Data Anonymization via Bastion Tunnel"
+echo "======================================"
+
+AWS_REGION="${bamboo_AWS_REGION}"
+ENDPOINT_FILE="${bamboo.build.working.directory}/restored_endpoints.txt"
+SCRIPT_DIR="${bamboo.build.working.directory}/anonymization-scripts/anonymization-scripts"
+
+DB_USERNAME="${bamboo_DB_USER}"
+SECRET_NAME="${bamboo_DB_SECRET_NAME}"
+IFS=',' read -r -a DB_LIST <<< "${bamboo_DB_NAMES}"
+
+# Bastion details
+BASTION_HOST="${bamboo_BASTION_HOST}"
+BASTION_USER="${bamboo_BASTION_SSH_USER}"
+BASTION_KEY="${bamboo_BASTION_SSH_KEY_PATH}"
+LOCAL_TUNNEL_PORT=3307
+
+# Optional wait tuning
+WAIT_MAX_ATTEMPTS="${bamboo_MYSQL_WAIT_ATTEMPTS:-60}"  # ~10 min at 10s
+WAIT_SLEEP_SECONDS="${bamboo_MYSQL_WAIT_SLEEP:-10}"
+
+# AWS creds
+export AWS_ACCESS_KEY_ID="${bamboo_AWS_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${bamboo_AWS_SECRET_ACCESS_KEY}"
+export AWS_DEFAULT_OUTPUT=json
+
+if [[ -z "${BASTION_HOST:-}" || -z "${BASTION_USER:-}" || -z "${BASTION_KEY:-}" ]]; then
+  echo "[ERROR] Missing Bastion vars: BASTION_HOST / BASTION_SSH_USER / BASTION_SSH_KEY_PATH"
+  exit 1
+fi
+
+if [[ ! -f "$ENDPOINT_FILE" ]]; then
+  echo "[ERROR] Missing restored_endpoints.txt; run Stage-2 first."
+  exit 1
+fi
+
+if [[ ! -d "$SCRIPT_DIR" ]]; then
+  echo "[ERROR] Missing anonymization-scripts directory at: $SCRIPT_DIR"
+  exit 1
+fi
+
+chmod 400 "$BASTION_KEY" || true
+
+echo "[INFO] Fetching DB password from Secrets Manager..."
+DB_PASSWORD="$(aws secretsmanager get-secret-value \
+  --region "$AWS_REGION" \
+  --secret-id "$SECRET_NAME" \
+  --query SecretString \
+  --output text)"
+if [[ -z "$DB_PASSWORD" ]]; then
+  echo "[ERROR] Could not retrieve DB password."
+  exit 1
+fi
+
+# Helper: wait until mysql is ready on the local tunnel port
+wait_for_mysql() {
+  local host="$1"    # always 127.0.0.1
+  local port="$2"    # tunnel port
+  for ((i=1; i<=WAIT_MAX_ATTEMPTS; i++)); do
+    if mysql -h "$host" -P "$port" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
+      echo "[INFO] MySQL is ready on $host:$port"
+      return 0
+    fi
+    echo "[WAIT] MySQL not ready on $host:$port (attempt $i/$WAIT_MAX_ATTEMPTS)"
+    sleep "$WAIT_SLEEP_SECONDS"
+  done
+  echo "[ERROR] MySQL did not become ready on $host:$port"
+  return 1
+}
+
+echo "--------------------------------------"
+cat "$ENDPOINT_FILE"
+echo "--------------------------------------"
+
+while IFS='|' read -r SOURCE_RDS RESTORED_RDS ENDPOINT; do
+  RESTORED_RDS="$(echo "$RESTORED_RDS" | xargs)"
+  ENDPOINT="$(echo "$ENDPOINT" | xargs)"
+  [[ -z "$RESTORED_RDS" || -z "$ENDPOINT" ]] && continue
+
+  echo ""
+  echo "--------------------------------------"
+  echo "[INFO] Target (restored): $RESTORED_RDS"
+  echo "Endpoint: $ENDPOINT"
+  echo "--------------------------------------"
+
+  # Start tunnel: local:3307 -> ENDPOINT:3306 via bastion
+  echo "[INFO] Establishing SSH tunnel via bastion: ${BASTION_USER}@${BASTION_HOST}"
+  # Free the local port if occupied
+  if lsof -iTCP:${LOCAL_TUNNEL_PORT} -sTCP:LISTEN -Pn >/dev/null 2>&1; then
+    echo "[INFO] Local port ${LOCAL_TUNNEL_PORT} in use; killing existing listener."
+    fuser -k "${LOCAL_TUNNEL_PORT}/tcp" || true
+    sleep 2
+  fi
+  ssh -o StrictHostKeyChecking=no -i "$BASTION_KEY" -N -L ${LOCAL_TUNNEL_PORT}:${ENDPOINT}:3306 ${BASTION_USER}@${BASTION_HOST} &
+  TUNNEL_PID=$!
+  sleep 3
+
+  # Confirm tunnel is up
+  if ! ps -p $TUNNEL_PID >/dev/null 2>&1; then
+    echo "[ERROR] Failed to establish SSH tunnel (PID not running)."
+    exit 1
+  fi
+
+  # Wait for MySQL on the tunnel
+  if ! wait_for_mysql "127.0.0.1" "${LOCAL_TUNNEL_PORT}"; then
+    echo "[ERROR] Skipping $RESTORED_RDS due to MySQL readiness timeout."
+    kill $TUNNEL_PID || true
+    continue
+  fi
+
+  # Process DBs
+  for DB in "${DB_LIST[@]}"; do
+    DB="$(echo "$DB" | xargs)"
+    echo "[INFO] Checking DB '$DB' on $RESTORED_RDS via tunnel..."
+    DB_EXISTS=$(mysql -h 127.0.0.1 -P ${LOCAL_TUNNEL_PORT} -u "$DB_USERNAME" -p"$DB_PASSWORD" -Nse "SHOW DATABASES LIKE '$DB';" || true)
+
+    if [[ "$DB_EXISTS" != "$DB" ]]; then
+      echo "[SKIP] DB '$DB' not present on $RESTORED_RDS"
+      continue
+    fi
+
+    SCRIPT_PATH="$SCRIPT_DIR/${DB}.sql"
+    if [[ ! -f "$SCRIPT_PATH" ]]; then
+      echo "[SKIP] No anonymization script found for '$DB' at $SCRIPT_PATH"
+      continue
+    fi
+
+    echo "[RUN] Executing anonymization for '$DB' using: $SCRIPT_PATH"
+    mysql -h 127.0.0.1 -P ${LOCAL_TUNNEL_PORT} -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB" < "$SCRIPT_PATH"
+
+    # Optional verification: if script name equals table name, try a count
+    TABLE_CANDIDATE="$(basename "$SCRIPT_PATH" .sql)"
+    if [[ -n "$TABLE_CANDIDATE" ]]; then
+      COUNT_OUT=$(mysql -h 127.0.0.1 -P ${LOCAL_TUNNEL_PORT} -u "$DB_USERNAME" -p"$DB_PASSWORD" -Nse "SELECT COUNT(*) FROM \`${DB}\`.\`${TABLE_CANDIDATE}\`;" 2>/dev/null || echo "")
+      [[ -n "$COUNT_OUT" ]] && echo "[VERIFY] Rows in ${DB}.${TABLE_CANDIDATE}: ${COUNT_OUT}"
+    fi
+
+    echo "[SUCCESS] Anonymization completed for '$DB' on '$RESTORED_RDS'"
+  done
+
+  echo "[INFO] Closing tunnel PID $TUNNEL_PID"
+  kill $TUNNEL_PID || true
+  sleep 1
+
+done < "$ENDPOINT_FILE"
+
+echo "--------------------------------------"
+echo "[SUCCESS] Stage 3 Completed Successfully"
+echo "--------------------------------------"
+
+# --------------------------------------------------------------------------------------
+# ------------------------------STAGE-4-------------------------------------------------
+# --------------------------------------------------------------------------------------
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "======================================"
+echo "Stage 4 - Backup Restored DBs to S3 (via Bastion Tunnel)"
+echo "======================================"
+
+RESTORED_ENDPOINTS_FILE="${bamboo.build.working.directory}/restored_endpoints.txt"
+S3_BUCKET="${bamboo.S3_BUCKET}"
+AWS_REGION="${bamboo.AWS_REGION}"
+
+IFS=',' read -r -a DB_LIST <<< "${bamboo.DB_NAMES}"
+
+# ==========================
+# 1) CLEANUP OLD DBs IN NON-PROD
+# ==========================
+echo "[INFO] Cleaning old DB schemas in Non-Prod..."
+
+export AWS_ACCESS_KEY_ID="${bamboo.NONPROD_AWS_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${bamboo.NONPROD_AWS_SECRET_ACCESS_KEY}"
+
+NONPROD_RDS_IDENTIFIER="${bamboo.NONPROD_RDS_IDENTIFIER}"
+NONPROD_BASTION_HOST="${bamboo.NONPROD_BASTION_HOST}"
+NONPROD_BASTION_SSH_USER="${bamboo.NONPROD_BASTION_SSH_USER}"
+NONPROD_BASTION_SSH_KEY_PATH="${bamboo.NONPROD_BASTION_SSH_KEY_PATH}"
+NONPROD_DB_SECRET_NAME="${bamboo.NONPROD_DB_SECRET_NAME}"
+NONPROD_DB_USERNAME="${bamboo.NONPROD_DB_USERNAME}"
+NONPROD_LOCAL_PORT=4407
+
+echo "[INFO] Retrieving Non-Prod DB endpoint..."
+NONPROD_ENDPOINT=$(aws rds describe-db-instances \
+  --db-instance-identifier "$NONPROD_RDS_IDENTIFIER" \
+  --region "$AWS_REGION" \
+  --query "DBInstances[0].Endpoint.Address" \
+  --output text)
+
+echo "[INFO] Fetching Non-Prod DB password..."
+NONPROD_DB_PASSWORD=$(aws secretsmanager get-secret-value \
+  --region "$AWS_REGION" \
+  --secret-id "$NONPROD_DB_SECRET_NAME" \
+  --query SecretString \
+  --output text)
+
+echo "[INFO] Establishing Non-Prod SSH tunnel..."
+ssh -f -N -o StrictHostKeyChecking=no \
+  -i "$NONPROD_BASTION_SSH_KEY_PATH" \
+  -L ${NONPROD_LOCAL_PORT}:${NONPROD_ENDPOINT}:3306 \
+  ${NONPROD_BASTION_SSH_USER}@${NONPROD_BASTION_HOST}
+
+sleep 3
+
+for DB in "${DB_LIST[@]}"; do
+  DB="$(echo "$DB" | xargs)"
+  echo "[CLEANUP] Dropping old database if exists → $DB"
+  mysql -h 127.0.0.1 -P ${NONPROD_LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$NONPROD_DB_PASSWORD" \
+    -e "DROP DATABASE IF EXISTS \`${DB}\`;" || true
+done
+
+echo "[INFO] Closing Non-Prod tunnel..."
+pkill -f "${NONPROD_LOCAL_PORT}:${NONPROD_ENDPOINT}:3306" || true
+
+# ==========================
+# 2) SWITCH TO PROD CREDS FOR BACKUP
+# ==========================
+echo "[INFO] Switching to PROD account for backup upload..."
+
+export AWS_ACCESS_KEY_ID="${bamboo.AWS_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${bamboo.AWS_SECRET_ACCESS_KEY}"
+unset AWS_SESSION_TOKEN || true
+
+DB_USERNAME="${bamboo.DB_USER}"
+SECRET_NAME="${bamboo.DB_SECRET_NAME}"
+
+echo "[INFO] Fetching PROD DB password..."
+DB_PASSWORD=$(aws secretsmanager get-secret-value \
+  --region "$AWS_REGION" \
+  --secret-id "$SECRET_NAME" \
+  --query SecretString \
+  --output text)
+
+LOCAL_PORT=3307
+BASTION_HOST="${bamboo.BASTION_HOST}"
+BASTION_USER="${bamboo.BASTION_SSH_USER}"
+BASTION_KEY_PATH="${bamboo.BASTION_SSH_KEY_PATH}"
+
+[[ ! -f "$RESTORED_ENDPOINTS_FILE" ]] && { echo "[ERROR] restored_endpoints.txt not found."; exit 1; }
+
+# ==========================
+# 3) BACKUP EACH RESTORED INSTANCE
+# ==========================
+while IFS='|' read -r _ RESTORED_RDS ENDPOINT; do
+  RESTORED_RDS="$(echo "$RESTORED_RDS" | xargs)"
+  ENDPOINT="$(echo "$ENDPOINT" | xargs)"
+  [[ -z "$RESTORED_RDS" || -z "$ENDPOINT" ]] && continue
+
+  echo "--------------------------------------"
+  echo "[INFO] Processing instance: $RESTORED_RDS"
+  echo "[INFO] Endpoint: $ENDPOINT"
+  echo "--------------------------------------"
+
+  ssh -f -N -o StrictHostKeyChecking=no \
+     -i "$BASTION_KEY_PATH" \
+     -L ${LOCAL_PORT}:${ENDPOINT}:3306 \
+     ${BASTION_USER}@${BASTION_HOST}
+  sleep 3
+
+  for DB in "${DB_LIST[@]}"; do
+    DB="$(echo "$DB" | xargs)"
+
+    DB_EXISTS=$(mysql -h 127.0.0.1 -P ${LOCAL_PORT} -u "$DB_USERNAME" -p"$DB_PASSWORD" \
+      -se "SHOW DATABASES LIKE '$DB';" || true)
+
+    [[ "$DB_EXISTS" != "$DB" ]] && { echo "[SKIP] $DB not found on $RESTORED_RDS"; continue; }
+
+    BACKUP_FILE="${DB}.sql.gz"
+    S3_PATH="s3://${S3_BUCKET}/restores/${RESTORED_RDS}/${BACKUP_FILE}"
+
+    echo "[DUMP] Creating backup of $DB..."
+    mysqldump --single-transaction --set-gtid-purged=OFF \
+      -h 127.0.0.1 -P ${LOCAL_PORT} -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB" | gzip > "$BACKUP_FILE"
+
+    echo "[UPLOAD] → $S3_PATH"
+    aws s3 cp "$BACKUP_FILE" "$S3_PATH" --region "$AWS_REGION" --sse AES256
+
+    rm -f "$BACKUP_FILE"
+  done
+
+  echo "[INFO] Closing PROD SSH tunnel..."
+  pkill -f "${LOCAL_PORT}:${ENDPOINT}:3306" || true
+
+done < "$RESTORED_ENDPOINTS_FILE"
+
+echo "======================================"
+echo "[SUCCESS] Stage 4 Completed Successfully"
+echo "======================================"
+
+# --------------------------------------------------------------------------------------
+# ------------------------------STAGE-5-------------------------------------------------
+# --------------------------------------------------------------------------------------
+
+#!/bin/bash
+set -euo pipefail
+
+echo "======================================"
+echo "Stage 5 - Cross-Account Restore to Non-Prod"
+echo "======================================"
+
+AWS_REGION="${bamboo.AWS_REGION}"
+S3_BUCKET="${bamboo.S3_BUCKET}"
+TARGET_RDS_IDENTIFIER="${bamboo.NONPROD_RDS_IDENTIFIER}"
+
+IFS=',' read -r -a DB_LIST <<< "${bamboo.DB_NAMES}"
+
+export AWS_ACCESS_KEY_ID="${bamboo.NONPROD_AWS_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${bamboo.NONPROD_AWS_SECRET_ACCESS_KEY}"
+
+RESTORE_ROLE_ARN="arn:aws:iam::${bamboo.NONPROD_ACCOUNT_ID}:role/NonProd-RDS-Restore-Role"
+
+echo "[INFO] Assuming restore role: $RESTORE_ROLE_ARN"
+CREDS=$(aws sts assume-role \
+  --role-arn "$RESTORE_ROLE_ARN" \
+  --role-session-name RestoreSession \
+  --region "$AWS_REGION" \
+  --output json)
+
+export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')
+export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
+export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
+
+aws sts get-caller-identity --output json
+
+TARGET_ENDPOINT=$(aws rds describe-db-instances \
+  --db-instance-identifier "$TARGET_RDS_IDENTIFIER" \
+  --region "$AWS_REGION" \
+  --query "DBInstances[0].Endpoint.Address" \
+  --output text)
+
+echo "[INFO] Non-prod RDS Endpoint: $TARGET_ENDPOINT"
+
+NONPROD_DB_SECRET_NAME="${bamboo.NONPROD_DB_SECRET_NAME}"
+NONPROD_DB_USERNAME="${bamboo.NONPROD_DB_USERNAME}"
+
+DB_PASSWORD=$(aws secretsmanager get-secret-value \
+  --region "$AWS_REGION" \
+  --secret-id "$NONPROD_DB_SECRET_NAME" \
+  --query SecretString \
+  --output text)
+
+NONPROD_BASTION_HOST="${bamboo.NONPROD_BASTION_HOST}"
+NONPROD_BASTION_USER="${bamboo.NONPROD_BASTION_SSH_USER}"
+NONPROD_BASTION_KEY="${bamboo.NONPROD_BASTION_SSH_KEY_PATH}"
+LOCAL_PORT=3317
+
+echo "[INFO] Establishing SSH Tunnel..."
+ssh -o StrictHostKeyChecking=no -i "$NONPROD_BASTION_KEY" -N \
+  -L ${LOCAL_PORT}:${TARGET_ENDPOINT}:3306 \
+  ${NONPROD_BASTION_USER}@${NONPROD_BASTION_HOST} &
+TUNNEL_PID=$!
+sleep 5
+
+echo "[INFO] Checking DB connectivity..."
+mysql -h 127.0.0.1 -P ${LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null
+echo "[SUCCESS] Database reachable over tunnel."
+
+for DB in "${DB_LIST[@]}"; do
+  DB="$(echo "$DB" | xargs)"
+  echo "--------------------------------------"
+  echo "[INFO] Restoring DB: $DB"
+
+  # ✅ Correct listing (No double restores)
+  LATEST_FILE=$(aws s3 ls s3://${S3_BUCKET}/restores/ --recursive --region "$AWS_REGION" \
+    | grep "/${DB}.sql.gz" | sort | tail -n 1 | awk '{print $4}')
+
+  if [[ -z "$LATEST_FILE" ]]; then
+    echo "[ERROR] No backup found for '$DB'"
+    continue
+  fi
+
+  S3_URI="s3://${S3_BUCKET}/${LATEST_FILE}"
+  echo "[INFO] Using backup: $S3_URI"
+
+  mysql -h 127.0.0.1 -P ${LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$DB_PASSWORD" \
+    -e "DROP DATABASE IF EXISTS \`${DB}\`; CREATE DATABASE \`${DB}\`;"
+
+  echo "[INFO] Importing dump (no pv)..."
+  aws s3 cp "$S3_URI" - --region "$AWS_REGION" | gunzip \
+    | mysql -h 127.0.0.1 -P ${LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$DB_PASSWORD" "$DB"
+
+  echo "[SUCCESS] Restore completed: $DB"
+done
+
+kill $TUNNEL_PID || true
+echo "--------------------------------------"
+echo "[SUCCESS] Stage 5 Completed Successfully"
+echo "--------------------------------------"
+
+# --------------------------------------------------------------------------------------
+# ------------------------------STAGE-6-------------------------------------------------
+# --------------------------------------------------------------------------------------
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "======================================"
+echo "Stage 6 - Verify Restored Databases & Records in Non-Prod"
+echo "======================================"
+
+AWS_REGION="${bamboo.AWS_REGION}"
+IFS=',' read -r -a DB_LIST <<< "${bamboo.DB_NAMES}"
+
+# Non-prod Access
+export AWS_ACCESS_KEY_ID="${bamboo.NONPROD_AWS_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${bamboo.NONPROD_AWS_SECRET_ACCESS_KEY}"
+
+NONPROD_RDS_IDENTIFIER="${bamboo.NONPROD_RDS_IDENTIFIER}"
+NONPROD_DB_SECRET_NAME="${bamboo.NONPROD_DB_SECRET_NAME}"
+NONPROD_DB_USERNAME="${bamboo.NONPROD_DB_USERNAME}"
+
+NONPROD_BASTION_HOST="${bamboo.NONPROD_BASTION_HOST}"
+NONPROD_BASTION_USER="${bamboo.NONPROD_BASTION_SSH_USER}"
+NONPROD_BASTION_KEY="${bamboo.NONPROD_BASTION_SSH_KEY_PATH}"
+
+LOCAL_PORT=3321   # fixed stable local tunnel port
+
+echo "[INFO] Resolving Non-Prod RDS endpoint..."
+TARGET_ENDPOINT=$(aws rds describe-db-instances \
+  --db-instance-identifier "$NONPROD_RDS_IDENTIFIER" \
+  --region "$AWS_REGION" \
+  --query "DBInstances[0].Endpoint.Address" \
+  --output text)
+
+echo "[INFO] Fetching DB password..."
+DB_PASSWORD=$(aws secretsmanager get-secret-value \
+  --region "$AWS_REGION" \
+  --secret-id "$NONPROD_DB_SECRET_NAME" \
+  --query SecretString \
+  --output text)
+
+echo "[INFO] Establishing SSH Tunnel..."
+ssh -o StrictHostKeyChecking=no -f -N \
+  -i "$NONPROD_BASTION_KEY" \
+  -L ${LOCAL_PORT}:${TARGET_ENDPOINT}:3306 \
+  ${NONPROD_BASTION_USER}@${NONPROD_BASTION_HOST}
+
+sleep 4
+
+for DB in "${DB_LIST[@]}"; do
+  DB=$(echo "$DB" | xargs)
+
+  echo "--------------------------------------"
+  echo "[CHECK] Validating database: $DB"
+
+  EXISTS=$(mysql -h 127.0.0.1 -P ${LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$DB_PASSWORD" \
+      -se "SHOW DATABASES LIKE '${DB}';" || true)
+
+  if [[ "$EXISTS" != "$DB" ]]; then
+    echo "[FAIL] Database '$DB' NOT found "
+    FAILED=true
+    continue
+  fi
+
+  echo "[OK] Database '$DB' exists "
+  echo "[INFO] Fetching record counts..."
+
+  TABLES=$(mysql -h 127.0.0.1 -P ${LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$DB_PASSWORD" \
+      -se "SHOW TABLES IN \`${DB}\`;" || true)
+
+  if [[ -z "$TABLES" ]]; then
+    echo "[WARN] No tables found in $DB (possible empty restore) ️"
+    continue
+  fi
+
+  for TABLE in $TABLES; do
+    COUNT=$(mysql -h 127.0.0.1 -P ${LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$DB_PASSWORD" \
+      -se "SELECT COUNT(*) FROM \`${DB}\`.\`${TABLE}\`;")
+
+    printf "  - %-40s : %s rows\n" "$TABLE" "$COUNT"
+  done
+
+done
+
+echo "[INFO] Closing tunnel..."
+pkill -f "${LOCAL_PORT}:${TARGET_ENDPOINT}:3306" || true
+
+echo "======================================"
+
+if [[ "${FAILED:-false}" == true ]]; then
+  echo "[ERROR] One or more databases failed validation."
+  exit 1
+else
+  echo "[SUCCESS] All databases & record counts verified "
+fi
+
+echo "======================================"
+echo "[SUCCESS] Stage 6 Completed"
+echo "======================================"
+
+# --------------------------------------------------------------------------------------
+# ------------------------------STAGE-7-------------------------------------------------
+# --------------------------------------------------------------------------------------
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "======================================"
+echo "Stage 7 - Cleanup Temporary RDS Instances"
+echo "======================================"
+
+AWS_REGION="${bamboo.AWS_REGION}"
+RESTORED_ENDPOINTS_FILE="${bamboo.build.working.directory}/restored_endpoints.txt"
+
+# Use PROD credentials (where temporary RDS were created)
+export AWS_ACCESS_KEY_ID="${bamboo.AWS_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${bamboo.AWS_SECRET_ACCESS_KEY}"
+unset AWS_SESSION_TOKEN || true
+
+if [[ ! -f "$RESTORED_ENDPOINTS_FILE" ]]; then
+  echo "[WARN] restored_endpoints.txt not found → Skipping RDS cleanup."
+  exit 0
+fi
+
+while IFS='|' read -r _ TEMP_RDS _; do
+  TEMP_RDS="$(echo "$TEMP_RDS" | xargs)"
+  [[ -z "$TEMP_RDS" ]] && continue
+
+  echo "--------------------------------------"
+  echo "[DELETE] Requesting deletion of temporary RDS → $TEMP_RDS"
+  echo "--------------------------------------"
+
+  # Check existence before delete
+  if ! aws rds describe-db-instances \
+        --db-instance-identifier "$TEMP_RDS" \
+        --region "$AWS_REGION" >/dev/null 2>&1; then
+     echo "[INFO] $TEMP_RDS does not exist → Skipping."
+     continue
+  fi
+
+  aws rds delete-db-instance \
+    --db-instance-identifier "$TEMP_RDS" \
+    --skip-final-snapshot \
+    --region "$AWS_REGION" \
+    --no-cli-pager
+
+  echo "[WAIT] Waiting for RDS deletion to complete... (this may take 5–20 minutes)"
+  
+  # Progress loop
+  while aws rds describe-db-instances \
+          --db-instance-identifier "$TEMP_RDS" \
+          --region "$AWS_REGION" >/dev/null 2>&1; do
+      echo "[WAIT] Still deleting $TEMP_RDS ... checking again in 45s"
+      sleep 45
+  done
+
+  echo "[SUCCESS] Temporary RDS deleted → $TEMP_RDS"
+done < "$RESTORED_ENDPOINTS_FILE"
+
+echo "======================================"
+echo "[SUCCESS] Stage 7 Completed Successfully"
+echo "======================================"
+# -----------------------------------------------------------------------------
+# ---------------------SCRIPT COMPLETION---------------------------------------
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# ----------------------S3 BUCKET POLICY---------------------------------------
+# -----------------------------------------------------------------------------
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "RequireTLS",
+            "Effect": "Deny",
+            "Principal": "*",
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::backup-bucket-temp-rds-1",
+                "arn:aws:s3:::backup-bucket-temp-rds-1/*"
+            ],
+            "Condition": {
+                "Bool": {
+                    "aws:SecureTransport": "false"
+                }
+            }
+        },
+        {
+            "Sid": "AllowRestoreRoleList",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::891377400738:role/NonProd-RDS-Restore-Role"
+            },
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::backup-bucket-temp-rds-1",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": "restores/*"
+                }
+            }
+        },
+        {
+            "Sid": "AllowRestoreRoleObjectAccess",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::891377400738:role/NonProd-RDS-Restore-Role"
+            },
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListMultipartUploadParts",
+                "s3:AbortMultipartUpload"
+            ],
+            "Resource": "arn:aws:s3:::backup-bucket-temp-rds-1/restores/*"
+        }
+    ]
+}
+
+#-------------------------------------------------------------------------------
+#-----------------------S3 POLICY COMPLETION------------------------------------
+#-------------------------------------------------------------------------------
