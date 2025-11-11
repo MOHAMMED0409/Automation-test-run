@@ -1,0 +1,12 @@
+{
+  "Rules": [
+    {
+      "ID": "ExpireRestoreObjectsAfter90Days",
+      "Prefix": "restores/",
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 90
+      }
+    }
+  ]
+}

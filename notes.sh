@@ -20,24 +20,24 @@ echo "Using AWS Region: $AWS_REGION"
 # ---------------------------------------
 # Step 2: Load Bamboo Variables
 # ---------------------------------------
-DATE_RAW="${bamboo_DATE}"
-TIME_RAW="${bamboo_TIME}"
-DB_NAMES_RAW="${bamboo_DB_NAMES}"
-IOPS_RAW="${bamboo_IOPS_TICKET}"
-RDS_RAW="${bamboo_RDS_INSTANCE_NAMES}"
+DATE="${bamboo_DATE}"
+TIME="${bamboo_TIME}"
+DB_NAMES="${bamboo_DB_NAMES}"
+IOPS="${bamboo_IOPS_TICKET}"
+RDS="${bamboo_RDS_INSTANCE_NAMES}"
 TEAM_NAME="${bamboo_TEAM_NAME}"
-USER_EMAILS_RAW="${bamboo_USER_EMAILS}"
+USER_EMAILS="${bamboo_USER_EMAILS}"
 
 # Validate mandatory inputs
-if [[ -z "$DB_NAMES_RAW" || -z "$IOPS_RAW" || -z "$RDS_RAW" || -z "$TEAM_NAME" || -z "$USER_EMAILS_RAW" ]]; then
+if [[ -z "$DB_NAMES" || -z "$IOPS" || -z "$RDS" || -z "$TEAM" || -z "$USER_EMAILS" ]]; then
   echo "[ERROR] One or more required inputs are missing!"
   exit 1
 fi
 
-IFS=',' read -r -a RDS_INSTANCES <<< "$RDS_RAW"
-IFS=',' read -r -a DATE_LIST <<< "$DATE_RAW"
-IFS=',' read -r -a TIME_LIST <<< "$TIME_RAW"
-IFS=',' read -r -a IOPS_LIST <<< "$IOPS_RAW"
+IFS=',' read -r -a RDS_INSTANCES <<< "$RDS"
+IFS=',' read -r -a DATE_LIST <<< "$DATE"
+IFS=',' read -r -a TIME_LIST <<< "$TIME"
+IFS=',' read -r -a IOPS_LIST <<< "$IOPS"
 
 NUM_RDS=${#RDS_INSTANCES[@]}
 NUM_DATES=${#DATE_LIST[@]}
@@ -52,7 +52,7 @@ echo "Time Entries: $NUM_TIMES"
 echo "IOPS Entries: $NUM_IOPS"
 echo "---------------------------------------"
 
-# Warn about mismatched lengths
+# Warning about mismatched lengths
 if (( NUM_DATES > 0 && NUM_DATES != NUM_RDS )); then
   echo "[WARNING] DATE entries ($NUM_DATES) don't match RDS count ($NUM_RDS)"
 fi
@@ -592,6 +592,7 @@ for DB in "${DB_LIST[@]}"; do
   echo "[CLEANUP] Dropping old database if exists → $DB"
   mysql -h 127.0.0.1 -P ${NONPROD_LOCAL_PORT} -u "$NONPROD_DB_USERNAME" -p"$NONPROD_DB_PASSWORD" \
     -e "DROP DATABASE IF EXISTS \`${DB}\`;" || true
+  echo "[CLEANUP] Dropping old database Completed"
 done
 
 echo "[INFO] Closing Non-Prod tunnel..."
@@ -745,7 +746,7 @@ for DB in "${DB_LIST[@]}"; do
   echo "--------------------------------------"
   echo "[INFO] Restoring DB: $DB"
 
-  # ✅ Correct listing (No double restores)
+  # Correct listing (No double restores)
   LATEST_FILE=$(aws s3 ls s3://${S3_BUCKET}/restores/ --recursive --region "$AWS_REGION" \
     | grep "/${DB}.sql.gz" | sort | tail -n 1 | awk '{print $4}')
 
@@ -996,3 +997,58 @@ echo "======================================"
 #-------------------------------------------------------------------------------
 #-----------------------S3 POLICY COMPLETION------------------------------------
 #-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+#--------------------------Bamboo Varibles--------------------------------------
+#-------------------------------------------------------------------------------
+# =====================================================
+# ----------------Prod Details-------------------------
+# =====================================================
+AWS_ACCESS_KEY_ID
+AWS_REGION
+AWS_SECRET_ACCESS_KEY
+BASTION_HOST
+BASTION_SSH_KEY_PATH
+BASTION_SSH_USER
+# =====================================================
+# ----------------Common requriment Details------------
+# =====================================================
+COOLDOWN_MINUTES
+DB_SECRET_NAME
+DB_USER
+MAX_CONCURRENCY
+MYSQL_WAIT_ATTEMPTS
+MYSQL_WAIT_SLEEP
+
+# =====================================================
+# ----------------Non-prod Details---------------------
+# =====================================================
+
+NONPROD_ACCOUNT_ID
+NONPROD_AWS_ACCESS_KEY_ID
+NONPROD_AWS_SECRET_ACCESS_KEY
+NONPROD_BASTION_HOST
+NONPROD_BASTION_SSH_KEY_PATH
+NONPROD_BASTION_SSH_USER
+NONPROD_DB_SECRET_NAME
+NONPROD_DB_USERNAME
+RDS_PORT
+REPO_PATH
+S3_MAX_USAGE_GB
+# =====================================================
+# ----------------User Input Details---------------------
+# =====================================================
+TEAM_NAME
+TIME
+USER_EMAILS
+DATE
+DB_NAMES
+IOPS_TICKET
+S3_BUCKET
+NONPROD_RDS_IDENTIFIER
+RDS_INSTANCE_NAMES
+# ==========================================================
+
+# ================Final Success Build=======================
+# ----------------------Build #176--------------------------
+# ==========================================================
